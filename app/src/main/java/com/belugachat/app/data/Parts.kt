@@ -42,6 +42,7 @@ sealed interface Part {
         val status: ToolStatus = ToolStatus.RUNNING,
         val result: String? = null,
         val isError: Boolean = false,
+        val thoughtSignature: String? = null,
     ) : Part
 }
 

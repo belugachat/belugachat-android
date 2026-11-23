@@ -75,6 +75,7 @@ class ProviderRepository(private val db: AppDatabase, private val cipher: Secret
             baseUrl = url,
             encryptedKey = cipher.encrypt(key),
             createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+            enabled = existing?.enabled ?: true,
         )
         val remote: List<RemoteModel>? = try {
             clientFor(provider.kind, provider.preset, provider.baseUrl, key).listModels()
@@ -118,6 +119,9 @@ class ProviderRepository(private val db: AppDatabase, private val cipher: Secret
 
     suspend fun setModelEnabled(model: ModelEntity, enabled: Boolean) =
         dao.setModelEnabled(model.providerId, model.modelId, enabled)
+
+    suspend fun setProviderEnabled(providerId: String, enabled: Boolean) =
+        dao.setProviderEnabled(providerId, enabled)
 
     suspend fun delete(providerId: String) {
         dao.deleteModels(providerId)

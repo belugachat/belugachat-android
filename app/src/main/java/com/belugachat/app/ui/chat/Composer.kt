@@ -32,8 +32,8 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -61,18 +61,9 @@ import androidx.core.content.FileProvider
 import com.belugachat.app.chat.AgentMode
 import com.belugachat.app.chat.AttachmentStore
 import com.belugachat.app.data.Part
-import com.belugachat.app.data.Reasoning
 import com.belugachat.app.data.SkillEntity
 import com.belugachat.app.ui.theme.LocalDarkTheme
 import java.io.File
-
-private val reasoningChipLabels = mapOf(
-    Reasoning.DEFAULT to "Auto",
-    Reasoning.LOW to "Low",
-    Reasoning.MEDIUM to "Medium",
-    Reasoning.HIGH to "High",
-    Reasoning.MAX to "Max",
-)
 
 @Composable
 fun Composer(
@@ -82,11 +73,9 @@ fun Composer(
     attaching: Int,
     skills: List<SkillEntity>,
     running: Boolean,
-    reasoning: String,
     selectedPreset: String?,
-    selectedModelId: String?,
-    onSelectReasoning: (String) -> Unit,
-    onToggleDeepSeekReasoning: () -> Unit,
+    hasCustomPrompt: Boolean,
+    onEditInstructions: () -> Unit,
     onAttach: (List<android.net.Uri>) -> Unit,
     onRemove: (Part.File) -> Unit,
     onSend: () -> Unit,
@@ -96,7 +85,6 @@ fun Composer(
     val context = LocalContext.current
     val dark = LocalDarkTheme.current
     var menu by remember { mutableStateOf(false) }
-    var reasoningMenu by remember { mutableStateOf(false) }
     var cameraFile by remember { mutableStateOf<android.net.Uri?>(null) }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { if (it.isNotEmpty()) onAttach(it) }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { if (it.isNotEmpty()) onAttach(it) }
@@ -118,8 +106,7 @@ fun Composer(
     val modeLabel = AgentMode.label(mode)
 
     val deepSeekMediaWarning = selectedPreset == "deepseek" && attachments.any {
-        val kind = AttachmentStore.kindOf(it.mime, it.name)
-        kind == AttachmentStore.Kind.IMAGE || kind == AttachmentStore.Kind.PDF
+        AttachmentStore.kindOf(it.mime, it.name) == AttachmentStore.Kind.IMAGE
     }
 
     fun applyCommand(command: String) {
@@ -132,7 +119,7 @@ fun Composer(
         if (commandSuggestions.isNotEmpty()) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                 Column {
-                    commandSuggestions.forEach { (command, description) ->
+                    commandSuggestions.forEach { (command, _) ->
                         Row(
                             Modifier.fillMaxWidth().clickable { applyCommand(command) }
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -140,10 +127,7 @@ fun Composer(
                         ) {
                             Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text(command, style = MaterialTheme.typography.labelLarge)
-                                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
+                            Text(command, style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -182,7 +166,7 @@ fun Composer(
                     Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "DeepSeek API models currently accept text, code, and DOCX files rather than images or PDFs.",
+                        "DeepSeek API models currently accept text and documents (PDF, DOCX, XLSX, code) rather than images.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
@@ -192,12 +176,12 @@ fun Composer(
 
         val pillBg = if (dark) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(26.dp),
             color = pillBg,
             shadowElevation = if (dark) 0.dp else 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp)),
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(26.dp)),
         ) {
             Column {
                 if (attachments.isNotEmpty() || attaching > 0) {
@@ -210,159 +194,12 @@ fun Composer(
                         if (attaching > 0) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     }
                 }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)
-                        .heightIn(min = 24.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (field.text.isEmpty()) {
-                        Text(
-                            if (skills.isEmpty()) "Message Beluga Chat…" else "Message · @ skills, / modes",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    BasicTextField(
-                        value = field,
-                        onValueChange = { field = it; onTextChange(it.text) },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = 8,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box {
-                        Box(
-                            Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .clickable { menu = true },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Outlined.Add, "Attach", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Photos") },
-                                leadingIcon = { Icon(Icons.Outlined.Image, null) },
-                                onClick = { menu = false; pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Camera") },
-                                leadingIcon = { Icon(Icons.Outlined.CameraAlt, null) },
-                                onClick = {
-                                    menu = false
-                                    val dir = File(context.cacheDir, "camera").apply { mkdirs() }
-                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(dir, "photo-${System.currentTimeMillis()}.jpg"))
-                                    cameraFile = uri
-                                    camera.launch(uri)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Files and documents") },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.InsertDriveFile, null) },
-                                onClick = { menu = false; pickFiles.launch(arrayOf("*/*")) },
-                            )
-                            HorizontalDivider()
-                            AgentMode.suggestions.forEach { (command, description) ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(command)
-                                            Text(
-                                                description,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    },
-                                    leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null) },
-                                    onClick = {
-                                        menu = false
-                                        applyCommand(command)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.width(4.dp))
-
-                    val isDeepSeek = selectedPreset == "deepseek"
-                    val isDeepSeekReasoner = isDeepSeek && (selectedModelId?.contains("reasoner", ignoreCase = true) == true)
-                    val reasoningActive = if (isDeepSeek) isDeepSeekReasoner else reasoning != Reasoning.DEFAULT
-                    val reasoningBg = when {
-                        isDeepSeek && isDeepSeekReasoner -> MaterialTheme.colorScheme.primary
-                        reasoningActive -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
-                    }
-                    val reasoningFg = when {
-                        isDeepSeek && isDeepSeekReasoner -> MaterialTheme.colorScheme.onPrimary
-                        reasoningActive -> MaterialTheme.colorScheme.onPrimaryContainer
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    val reasoningText = when {
-                        isDeepSeek -> "Reasoning"
-                        reasoning == Reasoning.DEFAULT -> "Reasoning"
-                        else -> "Reasoning: ${reasoningChipLabels[reasoning] ?: reasoning}"
-                    }
-
-                    Box {
-                        Surface(
-                            onClick = {
-                                if (isDeepSeek) onToggleDeepSeekReasoning() else reasoningMenu = true
-                            },
-                            shape = RoundedCornerShape(999.dp),
-                            color = reasoningBg,
-                            modifier = Modifier.height(30.dp),
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Outlined.Lightbulb, null, Modifier.size(14.dp), tint = reasoningFg)
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    reasoningText,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = reasoningFg,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                        if (!isDeepSeek) {
-                            DropdownMenu(expanded = reasoningMenu, onDismissRequest = { reasoningMenu = false }) {
-                                Reasoning.all.forEach { level ->
-                                    val picked = reasoning == level
-                                    DropdownMenuItem(
-                                        text = { Text(reasoningChipLabels.getValue(level)) },
-                                        trailingIcon = {
-                                            if (picked) Icon(Icons.Outlined.Check, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                                        },
-                                        onClick = {
-                                            reasoningMenu = false
-                                            onSelectReasoning(level)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.width(6.dp))
-
-                    if (modeLabel != null) {
+                if (modeLabel != null) {
+                    Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)) {
                         Surface(
                             shape = RoundedCornerShape(999.dp),
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.height(30.dp),
+                            modifier = Modifier.height(28.dp),
                         ) {
                             Row(
                                 Modifier.padding(start = 10.dp, end = 6.dp),
@@ -388,33 +225,106 @@ fun Composer(
                                 )
                             }
                         }
-                    } else {
-                        Surface(
-                            onClick = { applyCommand("/goal") },
-                            shape = RoundedCornerShape(999.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.height(30.dp),
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Box {
+                        Box(
+                            Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable { menu = true },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Row(
-                                Modifier.padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    "/goal",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
+                            Icon(Icons.Outlined.Add, "Attach or configure", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Photos") },
+                                leadingIcon = { Icon(Icons.Outlined.Image, null) },
+                                onClick = { menu = false; pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Camera") },
+                                leadingIcon = { Icon(Icons.Outlined.CameraAlt, null) },
+                                onClick = {
+                                    menu = false
+                                    val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(dir, "photo-${System.currentTimeMillis()}.jpg"))
+                                    cameraFile = uri
+                                    camera.launch(uri)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Files and documents") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.InsertDriveFile, null) },
+                                onClick = { menu = false; pickFiles.launch(arrayOf("*/*")) },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Chat instructions") },
+                                leadingIcon = { Icon(Icons.Outlined.Tune, null) },
+                                trailingIcon = {
+                                    if (hasCustomPrompt) {
+                                        Icon(Icons.Outlined.Check, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                },
+                                onClick = {
+                                    menu = false
+                                    onEditInstructions()
+                                },
+                            )
+                            HorizontalDivider()
+                            AgentMode.suggestions.forEach { (command, _) ->
+                                val label = command.removePrefix("/").replaceFirstChar { it.uppercase() }
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null) },
+                                    onClick = {
+                                        menu = false
+                                        applyCommand(command)
+                                    },
                                 )
                             }
                         }
                     }
 
-                    Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .heightIn(min = 24.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (field.text.isEmpty()) {
+                            Text(
+                                "Message Beluga Chat…",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        BasicTextField(
+                            value = field,
+                            onValueChange = { field = it; onTextChange(it.text) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            maxLines = 6,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
 
                     val canSend = (field.text.isNotBlank() || attachments.isNotEmpty()) && attaching == 0
                     Box(
                         Modifier
-                            .size(34.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(
                                 when {

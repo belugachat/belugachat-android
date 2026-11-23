@@ -10,6 +10,7 @@ import com.belugachat.app.llm.ProviderException
 import com.belugachat.app.llm.SseParser
 import com.belugachat.app.llm.StreamEvent
 import com.belugachat.app.llm.ToolSpec
+import com.belugachat.app.llm.errorMessage
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -238,5 +239,91 @@ class ProviderTest {
         assertTrue(AnthropicClient.isLegacyThinking("claude-sonnet-4-20250514"))
         assertFalse(AnthropicClient.isLegacyThinking("claude-opus-4-6"))
         assertFalse(AnthropicClient.isLegacyThinking("claude-sonnet-4-6"))
+    }
+
+    @Test fun openCodeZenPresetUsesApiKeyAndListsModels() = runBlocking {
+        val preset = Presets.byId("opencode")
+        assertEquals("OpenCode Zen", preset.name)
+        assertEquals("https://opencode.ai/zen/v1", preset.baseUrl)
+
+        val catalogJson = """{"data":[
+            {"id":"big-pickle"},
+            {"id":"deepseek-v4.1-flash-free"},
+            {"id":"claude-opus-4-6"},
+            {"id":"gpt-5"}
+        ]}"""
+        server.enqueue(MockResponse().setBody(catalogJson))
+        val client = OpenAiClient(server.url("/v1").toString(), "zen-secret-key", "opencode")
+        val models = client.listModels()
+        assertEquals(
+            listOf("big-pickle", "claude-opus-4-6", "deepseek-v4.1-flash-free", "gpt-5"),
+            models.map { it.id },
+        )
+        assertEquals("Bearer zen-secret-key", server.takeRequest().getHeader("authorization"))
+    }
+
+    @Test fun openAiGeminiRoundTripsThoughtSignatureAndHandlesArrayErrors() = runBlocking {
+        server.enqueue(sse(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_g1","extra_content":{"google":{"thought_signature":"sig_abc123"}},"function":{"name":"web_search","arguments":"{\"query\":\"test\"}"}}]}}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""",
+            "[DONE]",
+        ))
+        val client = OpenAiClient(server.url("/v1").toString(), "gm", "gemini")
+        val events = client.stream(LlmRequest("gemini-4-argon", "", listOf(LlmMessage("user", listOf(Content.Text("hi")))))).toList()
+        val toolCall = events.filterIsInstance<StreamEvent.ToolCall>().single()
+        assertEquals("sig_abc123", toolCall.thoughtSignature)
+
+        val storedPayload = OpenAiClient.buildPayload(
+            LlmRequest(
+                "gemini-4-argon", "",
+                listOf(
+                    LlmMessage("user", listOf(Content.Text("hi"))),
+                    LlmMessage("assistant", listOf(Content.ToolUse("call_g1", "web_search", JsonObject(emptyMap()), "sig_abc123"))),
+                    LlmMessage("tool", listOf(Content.ToolResult("call_g1", "ok", false))),
+                ),
+            ),
+            preset = "gemini",
+        )
+        val storedCall = storedPayload["messages"]!!.jsonArray[1].jsonObject["tool_calls"]!!.jsonArray[0].jsonObject
+        assertEquals(
+            "sig_abc123",
+            storedCall["extra_content"]!!.jsonObject["google"]!!.jsonObject["thought_signature"]!!.jsonPrimitive.content,
+        )
+
+        val fallbackPayload = OpenAiClient.buildPayload(
+            LlmRequest(
+                "gemini-4-argon", "",
+                listOf(
+                    LlmMessage("user", listOf(Content.Text("hi"))),
+                    LlmMessage("assistant", listOf(Content.ToolUse("call_g2", "web_search", JsonObject(emptyMap()), null))),
+                    LlmMessage("tool", listOf(Content.ToolResult("call_g2", "ok", false))),
+                ),
+            ),
+            preset = "gemini",
+        )
+        val fallbackCall = fallbackPayload["messages"]!!.jsonArray[1].jsonObject["tool_calls"]!!.jsonArray[0].jsonObject
+        assertEquals(
+            "context_engineering_is_the_way_to_go",
+            fallbackCall["extra_content"]!!.jsonObject["google"]!!.jsonObject["thought_signature"]!!.jsonPrimitive.content,
+        )
+
+        val openAiPayload = OpenAiClient.buildPayload(
+            LlmRequest(
+                "gpt-5", "",
+                listOf(
+                    LlmMessage("user", listOf(Content.Text("hi"))),
+                    LlmMessage("assistant", listOf(Content.ToolUse("call_o1", "web_search", JsonObject(emptyMap()), null))),
+                    LlmMessage("tool", listOf(Content.ToolResult("call_o1", "ok", false))),
+                ),
+            ),
+            preset = "openai",
+        )
+        val openAiCall = openAiPayload["messages"]!!.jsonArray[1].jsonObject["tool_calls"]!!.jsonArray[0].jsonObject
+        assertFalse(openAiCall.containsKey("extra_content"))
+
+        assertEquals(
+            "Missing signature",
+            errorMessage(400, """[{"error":{"code":400,"message":"Missing signature"}}]"""),
+        )
     }
 }

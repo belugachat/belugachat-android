@@ -15,12 +15,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +49,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -162,28 +160,40 @@ fun AssistantMessage(
     onApprove: (Part.ToolCall, Boolean, Boolean) -> Unit,
 ) {
     val message = item.message
+    val activityParts = remember(item.parts) {
+        item.parts.filter { (it is Part.Thinking && it.text.isNotBlank()) || it is Part.ToolCall }
+    }
+    val textParts = remember(item.parts) {
+        item.parts.filterIsInstance<Part.Text>().filter { it.text.isNotEmpty() }
+    }
+    val pendingApprovals = remember(activityParts) {
+        activityParts.filterIsInstance<Part.ToolCall>().filter { it.status == ToolStatus.AWAITING_APPROVAL }
+    }
+    var activityExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).animateContentSize()) {
-        val visible = item.parts.filter { !(it is Part.Thinking && it.text.isBlank()) }
-        if (visible.isEmpty() && item.streaming) {
+        if (item.streaming && activityParts.isEmpty() && textParts.isEmpty()) {
             TypingIndicator()
         }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            visible.forEachIndexed { index, part ->
-                when (part) {
-                    is Part.Text -> SelectionContainer { Markdown(part.text) }
-                    is Part.Thinking -> ThinkingBlock(
-                        text = part.text,
-                        durationMs = part.durationMs,
-                        active = item.streaming && index == visible.lastIndex,
-                    )
-                    is Part.ToolCall -> ToolCard(part, onApprove)
-                    is Part.File -> Unit
+            if (activityParts.isNotEmpty()) {
+                ActivityBlock(
+                    parts = activityParts,
+                    streaming = item.streaming,
+                    hasText = textParts.isNotEmpty(),
+                    expanded = activityExpanded,
+                    onToggle = { activityExpanded = !activityExpanded },
+                    onApprove = onApprove,
+                )
+                if (!activityExpanded && pendingApprovals.isNotEmpty()) {
+                    pendingApprovals.forEach { call ->
+                        ToolCard(call, onApprove)
+                    }
                 }
             }
-        }
-        if (item.streaming && visible.isNotEmpty() && visible.last() !is Part.Text) {
-            Spacer(Modifier.size(8.dp))
-            TypingIndicator()
+            textParts.forEach { part ->
+                SelectionContainer { Markdown(part.text) }
+            }
         }
         if (message.error != null && !item.streaming) {
             Spacer(Modifier.size(8.dp))
@@ -197,15 +207,6 @@ fun AssistantMessage(
                 SmallAction(Icons.Outlined.Refresh, "Regenerate", enabled = !busy, onClick = onRegenerate)
                 SmallAction(Icons.AutoMirrored.Outlined.CallSplit, "Branch into new chat", onClick = onBranch)
                 VersionNav(item.siblings, onSwitch)
-                Spacer(Modifier.weight(1f))
-                message.modelId?.let {
-                    Text(
-                        it + if (message.outputTokens > 0) " · ${message.outputTokens} tok" else "",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp),
-                    )
-                }
             }
         }
     }
@@ -285,33 +286,109 @@ fun formatSize(bytes: Long): String = when {
 }
 
 @Composable
-private fun ThinkingBlock(text: String, durationMs: Long?, active: Boolean) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val open = expanded || active
-    val label = when {
-        active -> "Thinking…"
-        durationMs != null && durationMs >= 1000L -> "Thought for ${durationMs / 1000L}s"
-        else -> "Thought process"
+private fun ActivityBlock(
+    parts: List<Part>,
+    streaming: Boolean,
+    hasText: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onApprove: (Part.ToolCall, Boolean, Boolean) -> Unit,
+) {
+    val thinkingParts = parts.filterIsInstance<Part.Thinking>()
+    val toolCalls = parts.filterIsInstance<Part.ToolCall>()
+    val totalThinkingMs = thinkingParts.mapNotNull { it.durationMs }.sum()
+    val hasRunningTool = toolCalls.any { it.status == ToolStatus.RUNNING }
+    val showSpinner = streaming && (hasRunningTool || !hasText)
+    val lastPart = parts.lastOrNull()
+
+    val summary = when {
+        streaming && !hasText -> when {
+            lastPart is Part.ToolCall && lastPart.status == ToolStatus.RUNNING -> toolSummary(lastPart).second
+            lastPart is Part.Thinking -> if (toolCalls.isNotEmpty()) "Thinking · ${toolCalls.size} ${if (toolCalls.size == 1) "step" else "steps"}" else "Thinking…"
+            else -> "Working…"
+        }
+        thinkingParts.isNotEmpty() && toolCalls.isNotEmpty() -> {
+            val steps = "${toolCalls.size} ${if (toolCalls.size == 1) "step" else "steps"}"
+            if (totalThinkingMs >= 1000L) "Reasoning (${totalThinkingMs / 1000L}s) & $steps"
+            else "Reasoning & activity · $steps"
+        }
+        thinkingParts.isNotEmpty() -> {
+            if (totalThinkingMs >= 1000L) "Thought for ${totalThinkingMs / 1000L}s" else "Reasoning"
+        }
+        toolCalls.size == 1 -> "Activity · ${toolSummary(toolCalls.first()).second}"
+        else -> "Activity · ${toolCalls.size} steps"
     }
-    Row(
-        Modifier.fillMaxWidth()
+
+    val leadingIcon = if (toolCalls.isNotEmpty()) Icons.Outlined.AutoAwesome else Icons.Outlined.Lightbulb
+
+    Column(
+        Modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable { expanded = !expanded }
-            .height(IntrinsicSize.Min),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Box(Modifier.width(2.5.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Lightbulb, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(6.dp))
-                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                Icon(if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showSpinner) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(leadingIcon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
             }
-            AnimatedVisibility(open) {
-                Box(Modifier.padding(top = 8.dp).heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-                    Text(text.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                summary,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                if (expanded) "Collapse" else "Expand",
+                Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AnimatedVisibility(expanded) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                parts.forEach { part ->
+                    when (part) {
+                        is Part.Thinking -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                val header = if (part.durationMs != null && part.durationMs >= 1000L) {
+                                    "Reasoning · ${part.durationMs / 1000L}s"
+                                } else {
+                                    "Reasoning"
+                                }
+                                Text(header, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Box(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
+                                    SelectionContainer {
+                                        Text(
+                                            part.text.trim(),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        is Part.ToolCall -> ToolCard(part, onApprove)
+                        else -> Unit
+                    }
                 }
             }
         }

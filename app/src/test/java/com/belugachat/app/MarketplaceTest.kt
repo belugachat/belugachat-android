@@ -7,6 +7,7 @@ import com.belugachat.app.ext.Marketplace
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -99,6 +100,17 @@ class MarketplaceTest {
         assertEquals("static-value", auth.getValue("X-API-Key").value)
         assertTrue(detail.needsSignIn)
         server.shutdown()
+    }
+
+    @Test fun featuredPluginsAreInstallableAndHaveUniqueIds() {
+        val featured = Marketplace.featuredPlugins
+        assertTrue(featured.isNotEmpty())
+        assertEquals(featured.size, featured.map { it.lockId }.toSet().size)
+        featured.forEach { item ->
+            assertEquals(MarketSource.PLUGINS, item.source)
+            assertTrue(item.installable)
+            assertEquals(item.id, item.raw["name"]?.jsonPrimitive?.content)
+        }
     }
 
     @Test fun featuredMcpServersAreKeylessInstallableAndIncludeExa() {

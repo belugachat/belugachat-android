@@ -1,6 +1,7 @@
 package com.belugachat.app.llm
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -15,7 +16,7 @@ sealed interface Content {
     data class Image(val mime: String, val base64: String) : Content
     data class Pdf(val name: String, val base64: String) : Content
     data class Thinking(val text: String, val signature: String?, val redacted: String?) : Content
-    data class ToolUse(val id: String, val name: String, val input: JsonObject) : Content
+    data class ToolUse(val id: String, val name: String, val input: JsonObject, val thoughtSignature: String? = null) : Content
     data class ToolResult(val toolUseId: String, val content: String, val isError: Boolean) : Content
 }
 
@@ -36,7 +37,7 @@ sealed interface StreamEvent {
     data class ThinkingDelta(val text: String) : StreamEvent
     data class ThinkingSignature(val signature: String) : StreamEvent
     data class RedactedThinking(val data: String) : StreamEvent
-    data class ToolCall(val id: String, val name: String, val arguments: String) : StreamEvent
+    data class ToolCall(val id: String, val name: String, val arguments: String, val thoughtSignature: String? = null) : StreamEvent
     data class Usage(val inputTokens: Long, val outputTokens: Long) : StreamEvent
     data class Finished(val stopReason: String?) : StreamEvent
 }
@@ -63,7 +64,12 @@ object Http {
 /** Pulls a human-readable message out of a provider error body. */
 fun errorMessage(status: Int, body: String): String {
     val parsed = runCatching {
-        val root = kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+        val element = kotlinx.serialization.json.Json.parseToJsonElement(body)
+        val root = when (element) {
+            is JsonObject -> element
+            is JsonArray -> element.firstOrNull() as? JsonObject
+            else -> null
+        } ?: return@runCatching null
         val error: JsonElement? = root["error"]
         when {
             error is JsonObject -> error["message"]?.jsonPrimitive?.contentOrNull

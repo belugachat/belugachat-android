@@ -2,9 +2,15 @@ package com.belugachat.app
 
 import com.belugachat.app.tools.WebTools
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -124,5 +130,89 @@ class WebToolsTest {
         val result = tools.fetch(server.url("/hello").toString())
         assertEquals("hello ok", result)
         assertEquals(1, lookups)
+    }
+
+    @Test
+    fun searchUsesExaByDefault() = runBlocking {
+        var ddgHits = 0
+        var toolCallName: String? = null
+        var callQuery: String? = null
+        var callObjective: String? = null
+        var callNumResults: Int? = null
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path == "/html/") {
+                    ddgHits++
+                    return MockResponse().setBody("<html><body></body></html>")
+                }
+                val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+                val method = body["method"]?.jsonPrimitive?.content
+                val id = body["id"]?.jsonPrimitive?.intOrNull
+                return when (method) {
+                    "initialize" -> MockResponse()
+                        .addHeader("Content-Type", "application/json")
+                        .setBody("""{"jsonrpc":"2.0","id":$id,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"exa"}}}""")
+                    "notifications/initialized" -> MockResponse().setResponseCode(202)
+                    "tools/call" -> {
+                        val params = body["params"]!!.jsonObject
+                        toolCallName = params["name"]?.jsonPrimitive?.content
+                        val args = params["arguments"]!!.jsonObject
+                        callQuery = args["query"]?.jsonPrimitive?.content
+                        callObjective = args["objective"]?.jsonPrimitive?.content
+                        callNumResults = args["numResults"]?.jsonPrimitive?.intOrNull
+                        MockResponse()
+                            .addHeader("Content-Type", "application/json")
+                            .setBody("""{"jsonrpc":"2.0","id":$id,"result":{"isError":false,"content":[{"type":"text","text":"1. Exa Kotlin Result\nhttps://kotlinlang.org\nOfficial Kotlin docs"}]}}""")
+                    }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+
+        val tools = WebTools(
+            http = OkHttpClient(),
+            exaMcpUrl = server.url("/mcp").toString(),
+            duckDuckGoUrl = server.url("/html/").toString(),
+        )
+        val result = tools.search("kotlin docs", 3)
+        assertTrue(result.contains("Exa Kotlin Result"))
+        assertEquals(0, ddgHits)
+        assertEquals("web_search_exa", toolCallName)
+        assertEquals("kotlin docs", callQuery)
+        assertTrue(!callObjective.isNullOrBlank())
+        assertEquals(3, callNumResults)
+    }
+
+    @Test
+    fun searchFallsBackToDuckDuckGoWhenExaFails() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return when (request.path) {
+                    "/mcp" -> MockResponse().setResponseCode(500).setBody("exa unavailable")
+                    "/html/" -> MockResponse().setBody(
+                        """
+                        <html><body>
+                          <div class="result">
+                            <a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fddg">DDG Backup Result</a>
+                            <div class="result__snippet">Fallback snippet text</div>
+                          </div>
+                        </body></html>
+                        """.trimIndent(),
+                    )
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+
+        val tools = WebTools(
+            http = OkHttpClient(),
+            exaMcpUrl = server.url("/mcp").toString(),
+            duckDuckGoUrl = server.url("/html/").toString(),
+        )
+        val result = tools.search("backup test", 5)
+        assertTrue(result.contains("1. DDG Backup Result"))
+        assertTrue(result.contains("https://example.com/ddg"))
+        assertTrue(result.contains("Fallback snippet text"))
     }
 }

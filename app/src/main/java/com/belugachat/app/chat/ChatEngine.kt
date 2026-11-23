@@ -5,6 +5,7 @@ import com.belugachat.app.data.ConversationEntity
 import com.belugachat.app.data.MessageEntity
 import com.belugachat.app.data.MessageStatus
 import com.belugachat.app.data.Part
+import com.belugachat.app.data.ProviderKind
 import com.belugachat.app.data.ProviderRepository
 import com.belugachat.app.data.Role
 import com.belugachat.app.data.SettingsStore
@@ -68,11 +69,16 @@ class ChatEngine(
     private val approvals = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val alwaysAllowed = ConcurrentHashMap.newKeySet<String>()
 
-    suspend fun createConversation(providerId: String?, modelId: String?, reasoning: String): ConversationEntity {
+    suspend fun createConversation(
+        providerId: String?,
+        modelId: String?,
+        reasoning: String,
+        systemPrompt: String? = null,
+    ): ConversationEntity {
         val now = System.currentTimeMillis()
         val conversation = ConversationEntity(
             id = UUID.randomUUID().toString(), title = NEW_TITLE, createdAt = now, updatedAt = now,
-            providerId = providerId, modelId = modelId, reasoning = reasoning,
+            systemPrompt = systemPrompt, providerId = providerId, modelId = modelId, reasoning = reasoning,
         )
         chats.upsertConversation(conversation)
         return conversation
@@ -168,7 +174,8 @@ class ChatEngine(
             val client = providers.client(provider)
             val all = chats.messages(conversation.id)
             val path = MessageTree.path(all, assistant.parentId)
-            val history = History.build(path) { attachments.toContent(it) }
+            val supportsNativePdf = provider.kind == ProviderKind.ANTHROPIC || provider.preset in setOf("openai", "openrouter")
+            val history = History.build(path) { attachments.toContent(it, allowBinaryPdf = supportsNativePdf) }
             val activeTools = tools.active()
             val skills = if (activeTools.any { it.name == "view_skill" }) extensions.enabledSkills() else emptyList()
             val lastUserText = path.lastOrNull()?.parts?.plainText().orEmpty()
@@ -225,7 +232,10 @@ class ChatEngine(
                         }
                         is StreamEvent.ToolCall -> {
                             finishThinking()
-                            val call = Part.ToolCall(event.id, event.name, event.arguments, ToolStatus.RUNNING)
+                            val call = Part.ToolCall(
+                                event.id, event.name, event.arguments, ToolStatus.RUNNING,
+                                thoughtSignature = event.thoughtSignature,
+                            )
                             parts += call
                             calls += call
                         }
@@ -382,7 +392,10 @@ class ChatEngine(
                             is StreamEvent.ThinkingSignature -> signLastThinking(parts, event.signature)
                             is StreamEvent.RedactedThinking -> parts += Part.Thinking("", redacted = event.data)
                             is StreamEvent.ToolCall -> {
-                                val subCall = Part.ToolCall(event.id, event.name, event.arguments, ToolStatus.RUNNING)
+                                val subCall = Part.ToolCall(
+                                    event.id, event.name, event.arguments, ToolStatus.RUNNING,
+                                    thoughtSignature = event.thoughtSignature,
+                                )
                                 parts += subCall
                                 calls += subCall
                             }

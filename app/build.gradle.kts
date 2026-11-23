@@ -21,8 +21,8 @@ android {
         applicationId = "com.belugachat.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "ENABLE_SELF_UPDATE", "true")
         buildConfigField("String", "GITHUB_REPO", "\"belugachat/belugachat-android\"")
@@ -94,6 +94,7 @@ dependencies {
     implementation(libs.commonmark.gfm.tables)
     implementation(libs.coil.compose)
     implementation(libs.jsoup)
+    implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

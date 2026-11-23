@@ -10,3 +10,6 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+# PDFBox Android
+-dontwarn com.tom_roush.pdfbox.**
+-dontwarn org.apache.fontbox.**

@@ -56,7 +56,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val skills: StateFlow<List<SkillEntity>> = c.extensions.skills.map { list -> list.filter { it.enabled } }.state(emptyList())
 
     val models: StateFlow<List<ModelChoice>> = combine(c.providers.providers, c.providers.models) { providers, models ->
-        val byId = providers.associateBy { it.id }
+        val byId = providers.filter { it.enabled }.associateBy { it.id }
         models.filter { it.enabled }.mapNotNull { m -> byId[m.providerId]?.let { ModelChoice(it, m) } }
     }.state(emptyList())
 
@@ -86,12 +86,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Model picked before the first message of a new chat. */
     private val pendingModel = MutableStateFlow<Pair<String, String>?>(null)
     private val pendingReasoning = MutableStateFlow<String?>(null)
+    private val pendingPrompt = MutableStateFlow<String?>(null)
+
+    val chatPrompt: StateFlow<String?> = combine(conversation, pendingPrompt) { conv, pending ->
+        conv?.systemPrompt ?: pending
+    }.state(null)
 
     val selectedModel: StateFlow<ModelChoice?> = combine(conversation, pendingModel, settings, models, providers) { conv, pending, s, models, providerList ->
         val key = conv?.providerId?.let { p -> conv.modelId?.let { p to it } } ?: pending
             ?: s.lastProviderId?.let { p -> s.lastModelId?.let { p to it } }
         models.firstOrNull { it.provider.id == key?.first && it.model.modelId == key.second }
-            ?: key?.let { (p, m) -> providerList.firstOrNull { it.id == p }?.let { ModelChoice(it, ModelEntity(p, m, m, true, 0)) } }
+            ?: key?.let { (p, m) -> providerList.firstOrNull { it.id == p && it.enabled }?.let { ModelChoice(it, ModelEntity(p, m, m, true, 0)) } }
             ?: models.firstOrNull()
     }.state(null)
 
@@ -142,6 +147,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         pendingModel.value = null
         pendingReasoning.value = null
+        pendingPrompt.value = null
     }
 
     fun newChat() = open(null)
@@ -158,7 +164,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         launchSafe {
             var id = conversationId.value
             if (id == null) {
-                val conv = c.engine.createConversation(choice.provider.id, choice.model.modelId, reasoning.value)
+                val conv = c.engine.createConversation(
+                    choice.provider.id,
+                    choice.model.modelId,
+                    reasoning.value,
+                    systemPrompt = pendingPrompt.value,
+                )
+                pendingPrompt.value = null
                 id = conv.id
                 conversationId.value = id
             }
@@ -232,8 +244,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         attachments.value = attachments.value + part
                         val kind = AttachmentStore.kindOf(part.mime, part.name)
-                        if (selectedModel.value?.provider?.preset == "deepseek" && (kind == AttachmentStore.Kind.IMAGE || kind == AttachmentStore.Kind.PDF)) {
-                            notify("DeepSeek API models currently accept text, code, and DOCX attachments rather than images or PDFs.")
+                        if (selectedModel.value?.provider?.preset == "deepseek" && kind == AttachmentStore.Kind.IMAGE) {
+                            notify("DeepSeek API models currently accept text and documents rather than images.")
                         }
                     }
                 } catch (e: Exception) {
@@ -262,7 +274,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setChatPrompt(prompt: String?) = launchSafe {
-        conversation.value?.let { chats.updateConversation(it.copy(systemPrompt = prompt?.takeIf { p -> p.isNotBlank() })) }
+        val cleaned = prompt?.takeIf { it.isNotBlank() }
+        val conv = conversation.value
+        if (conv != null) chats.updateConversation(conv.copy(systemPrompt = cleaned))
+        else pendingPrompt.value = cleaned
     }
 
     suspend fun exportMarkdown(): Pair<String, String>? = conversationId.value?.let { c.engine.exportMarkdown(it) }

@@ -158,11 +158,18 @@ fun TextFieldDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = value, onValueChange = { value = it }, label = { Text(label) },
-                singleLine = singleLine, minLines = if (singleLine) 1 else 6, maxLines = if (singleLine) 1 else 14,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text(label) },
+                    shape = RoundedCornerShape(14.dp),
+                    singleLine = singleLine,
+                    minLines = if (singleLine) 1 else 5,
+                    maxLines = if (singleLine) 1 else 10,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = { TextButton(onClick = { onConfirm(value); onDismiss() }) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

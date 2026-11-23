@@ -172,46 +172,72 @@ fun MarketplaceScreen(vm: ManageViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            fun androidx.compose.foundation.lazy.LazyListScope.marketCards(
+                list: List<MarketItem>,
+                onQuickInstall: (MarketItem) -> Unit,
+            ) {
+                items(list, key = { it.lockId }) { item ->
+                    val expanded = expandedKey == item.lockId
+                    ItemCard(
+                        item = item,
+                        expanded = expanded,
+                        detail = if (expanded) detail else null,
+                        detailLoading = expanded && detailLoading,
+                        installed = item.lockId in installedIds,
+                        installing = installing == item.marketplace + item.id,
+                        headerValues = headerValues,
+                        onHeaderChange = { name, value -> headerValues = headerValues + (name to value) },
+                        onToggle = { toggle(item) },
+                        onInstall = { onQuickInstall(item) },
+                        onInstallWithHeaders = { values ->
+                            vm.install(item, values) {
+                                expandedKey = null
+                                headerValues = emptyMap()
+                                vm.closeDetail()
+                            }
+                        },
+                    )
+                }
+            }
+
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             when (tab) {
-                0 -> LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                    if (pluginErrors.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Some marketplace sources couldn't be loaded. ${pluginErrors.first()}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                            )
+                0 -> {
+                    val featuredPluginsFiltered = Marketplace.featuredPlugins.filter { item ->
+                        (query.isBlank() || listOfNotNull(item.name, item.description, item.author, item.category, item.marketplace)
+                            .any { it.contains(query, true) }) && (marketplaceFilter.isBlank() || item.marketplace == marketplaceFilter)
+                    }
+                    val featuredPluginIds = featuredPluginsFiltered.map { it.lockId }.toSet()
+                    val catalogPlugins = filtered.filter { it.lockId !in featuredPluginIds }
+                    val installPlugin: (MarketItem) -> Unit = { item ->
+                        vm.quickInstallPlugin(item) {
+                            expandedKey = item.lockId
+                            headerValues = emptyMap()
                         }
                     }
-                    if (plugins != null && filtered.isEmpty()) item { Text("Nothing found.", Modifier.padding(20.dp)) }
-                    items(filtered, key = { it.lockId }) { item ->
-                        val expanded = expandedKey == item.lockId
-                        ItemCard(
-                            item = item,
-                            expanded = expanded,
-                            detail = if (expanded) detail else null,
-                            detailLoading = expanded && detailLoading,
-                            installed = item.lockId in installedIds,
-                            installing = installing == item.marketplace + item.id,
-                            headerValues = headerValues,
-                            onHeaderChange = { name, value -> headerValues = headerValues + (name to value) },
-                            onToggle = { toggle(item) },
-                            onInstall = {
-                                vm.quickInstallPlugin(item) {
-                                    expandedKey = item.lockId
-                                    headerValues = emptyMap()
-                                }
-                            },
-                            onInstallWithHeaders = { values ->
-                                vm.install(item, values) {
-                                    expandedKey = null
-                                    headerValues = emptyMap()
-                                    vm.closeDetail()
-                                }
-                            },
-                        )
+
+                    LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                        if (pluginErrors.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Some marketplace sources couldn't be loaded. ${pluginErrors.first()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                        if (featuredPluginsFiltered.isNotEmpty()) {
+                            item { SectionLabel("Recommended") }
+                            marketCards(featuredPluginsFiltered, installPlugin)
+                        }
+                        if (catalogPlugins.isNotEmpty()) {
+                            item { SectionLabel("All plugins") }
+                            marketCards(catalogPlugins, installPlugin)
+                        }
+                        if (featuredPluginsFiltered.isEmpty() && plugins != null && catalogPlugins.isEmpty()) {
+                            item { Text("Nothing found.", Modifier.padding(20.dp)) }
+                        }
                     }
                 }
                 1 -> {
@@ -221,30 +247,8 @@ fun MarketplaceScreen(vm: ManageViewModel, onBack: () -> Unit) {
                     }
                     val featuredIds = featuredFiltered.map { it.lockId }.toSet()
                     val registryItems = filtered.filter { it.lockId !in featuredIds }
-
-                    fun androidx.compose.foundation.lazy.LazyListScope.mcpCards(list: List<MarketItem>) {
-                        items(list, key = { it.lockId }) { item ->
-                            val expanded = expandedKey == item.lockId
-                            ItemCard(
-                                item = item,
-                                expanded = expanded,
-                                detail = if (expanded) detail else null,
-                                detailLoading = expanded && detailLoading,
-                                installed = item.lockId in installedIds,
-                                installing = installing == item.marketplace + item.id,
-                                headerValues = headerValues,
-                                onHeaderChange = { name, value -> headerValues = headerValues + (name to value) },
-                                onToggle = { toggle(item) },
-                                onInstall = { if (item.needsSignIn) toggle(item) else vm.install(item) },
-                                onInstallWithHeaders = { values ->
-                                    vm.install(item, values) {
-                                        expandedKey = null
-                                        headerValues = emptyMap()
-                                        vm.closeDetail()
-                                    }
-                                },
-                            )
-                        }
+                    val installMcp: (MarketItem) -> Unit = { item ->
+                        if (item.needsSignIn) toggle(item) else vm.install(item)
                     }
 
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
@@ -258,11 +262,11 @@ fun MarketplaceScreen(vm: ManageViewModel, onBack: () -> Unit) {
                         }
                         if (featuredFiltered.isNotEmpty()) {
                             item { SectionLabel("Recommended · Free, no key needed") }
-                            mcpCards(featuredFiltered)
+                            marketCards(featuredFiltered, installMcp)
                         }
                         if (registryItems.isNotEmpty()) {
                             item { SectionLabel("MCP Registry") }
-                            mcpCards(registryItems)
+                            marketCards(registryItems, installMcp)
                         }
                         if (featuredFiltered.isEmpty() && mcpItems != null && registryItems.isEmpty()) {
                             item { Text("Nothing found.", Modifier.padding(20.dp)) }

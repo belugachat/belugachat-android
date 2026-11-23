@@ -378,6 +378,81 @@ class Marketplace(
     }
 
     companion object {
+        val featuredPlugins: List<MarketItem> = listOf(
+            MarketItem(
+                source = MarketSource.PLUGINS,
+                marketplace = "anthropics/skills",
+                id = "document-skills",
+                name = "document-skills",
+                description = "Document processing skills for Excel, Word, PowerPoint, and PDF creation and editing.",
+                version = null,
+                author = "Anthropic",
+                category = "Documents",
+                installable = true,
+                homepage = "https://github.com/anthropics/skills",
+                repository = "https://github.com/anthropics/skills",
+                trust = "recommended · official",
+                components = mapOf("skills" to 4),
+                raw = Json.parseToJsonElement(
+                    """{"name":"document-skills","source":"./","skills":["./skills/xlsx","./skills/docx","./skills/pptx","./skills/pdf"]}""",
+                ).jsonObject,
+            ),
+            MarketItem(
+                source = MarketSource.PLUGINS,
+                marketplace = "anthropics/skills",
+                id = "example-skills",
+                name = "example-skills",
+                description = "Skills for frontend design, canvas design, MCP building, skill creation, doc co-authoring, and web testing.",
+                version = null,
+                author = "Anthropic",
+                category = "Design & Dev",
+                installable = true,
+                homepage = "https://github.com/anthropics/skills",
+                repository = "https://github.com/anthropics/skills",
+                trust = "recommended · official",
+                components = mapOf("skills" to 12),
+                raw = Json.parseToJsonElement(
+                    """{"name":"example-skills","source":"./","skills":["./skills/algorithmic-art","./skills/brand-guidelines","./skills/canvas-design","./skills/doc-coauthoring","./skills/frontend-design","./skills/internal-comms","./skills/mcp-builder","./skills/skill-creator","./skills/slack-gif-creator","./skills/theme-factory","./skills/web-artifacts-builder","./skills/webapp-testing"]}""",
+                ).jsonObject,
+            ),
+            MarketItem(
+                source = MarketSource.PLUGINS,
+                marketplace = "anthropics/skills",
+                id = "discernment-nudge",
+                name = "discernment-nudge",
+                description = "Appends concise follow-up questions after substantive answers to help verify facts and probe reasoning.",
+                version = null,
+                author = "Anthropic",
+                category = "Assistant",
+                installable = true,
+                homepage = "https://github.com/anthropics/skills",
+                repository = "https://github.com/anthropics/skills",
+                trust = "recommended · official",
+                components = mapOf("skills" to 1),
+                raw = Json.parseToJsonElement(
+                    """{"name":"discernment-nudge","source":"./","skills":["./skills/discernment-nudge"]}""",
+                ).jsonObject,
+            ),
+            MarketItem(
+                source = MarketSource.PLUGINS,
+                marketplace = "anthropics/skills",
+                id = "claude-api",
+                name = "claude-api",
+                description = "Claude API and SDK documentation skill for building LLM-powered applications.",
+                version = null,
+                author = "Anthropic",
+                category = "Developer",
+                installable = true,
+                homepage = "https://github.com/anthropics/skills",
+                repository = "https://github.com/anthropics/skills",
+                trust = "recommended · official",
+                components = mapOf("skills" to 1),
+                raw = Json.parseToJsonElement(
+                    """{"name":"claude-api","source":"./","skills":["./skills/claude-api"]}""",
+                ).jsonObject,
+            ),
+        )
+
         val featuredMcpServers: List<MarketItem> = listOf(
             MarketItem(
                 source = MarketSource.MCP,

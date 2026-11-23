@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -83,6 +84,7 @@ class OpenAiClient(
     }.flowOn(Dispatchers.IO)
 
     companion object {
+        private const val GEMINI_FALLBACK_THOUGHT_SIGNATURE = "context_engineering_is_the_way_to_go"
         private val EXCLUDED = listOf(
             "embedding", "tts", "whisper", "dall-e", "moderation", "audio", "realtime", "transcribe",
             "image-", "-image", "imagen", "veo", "aqa", "rerank",
@@ -135,6 +137,19 @@ class OpenAiClient(
                                             put("name", call.name)
                                             put("arguments", call.input.toString())
                                         })
+                                        val sig = call.thoughtSignature?.takeIf { it.isNotEmpty() }
+                                            ?: if (preset == "gemini" || request.model.contains("gemini", ignoreCase = true)) {
+                                                GEMINI_FALLBACK_THOUGHT_SIGNATURE
+                                            } else {
+                                                null
+                                            }
+                                        if (sig != null) {
+                                            put("extra_content", buildJsonObject {
+                                                put("google", buildJsonObject {
+                                                    put("thought_signature", sig)
+                                                })
+                                            })
+                                        }
                                     })
                                 })
                             })
@@ -190,7 +205,12 @@ class OpenAiClient(
 
 /** Turns Chat Completions chunks into [StreamEvent]s. Tool calls are emitted once complete. */
 class OpenAiStreamTranslator {
-    private data class PendingCall(var id: String = "", var name: String = "", val args: StringBuilder = StringBuilder())
+    private data class PendingCall(
+        var id: String = "",
+        var name: String = "",
+        val args: StringBuilder = StringBuilder(),
+        var thoughtSignature: String? = null,
+    )
 
     private val calls = sortedMapOf<Int, PendingCall>()
     private var finishReason: String? = null
@@ -219,6 +239,10 @@ class OpenAiStreamTranslator {
                 val function = obj["function"] as? JsonObject
                 function?.get("name")?.jsonPrimitive?.contentOrNull?.let { if (it.isNotEmpty()) call.name = it }
                 function?.get("arguments")?.jsonPrimitive?.contentOrNull?.let { call.args.append(it) }
+                val extra = (obj["extra_content"] as? JsonObject)?.get("google") as? JsonObject
+                val sig = (extra?.get("thought_signature") as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["thought_signature"] as? JsonPrimitive)?.contentOrNull
+                if (!sig.isNullOrEmpty()) call.thoughtSignature = sig
             }
         }
         choice?.get("finish_reason")?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }?.let { finishReason = it }
@@ -235,7 +259,7 @@ class OpenAiStreamTranslator {
         if (finished) return emptyList()
         finished = true
         val events = calls.values.mapIndexed { i, call ->
-            StreamEvent.ToolCall(call.id.ifEmpty { "call_$i" }, call.name, call.args.toString().ifBlank { "{}" })
+            StreamEvent.ToolCall(call.id.ifEmpty { "call_$i" }, call.name, call.args.toString().ifBlank { "{}" }, call.thoughtSignature)
         }
         calls.clear()
         val reason = if (events.isNotEmpty()) "tool_use" else finishReason

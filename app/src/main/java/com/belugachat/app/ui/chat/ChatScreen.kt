@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DrawerValue
@@ -107,6 +106,7 @@ fun ChatScreen(
     val attaching by vm.attaching.collectAsState()
     val skills by vm.skills.collectAsState()
     val settings by vm.settings.collectAsState()
+    val chatPrompt by vm.chatPrompt.collectAsState()
 
     var showModels by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -182,18 +182,13 @@ fun ChatScreen(
                         IconButton(onClick = vm::newChat) {
                             Icon(Icons.Outlined.Add, "New chat")
                         }
-                        if (conversation != null) {
+                        if (conversation != null && thread.isNotEmpty()) {
                             Box {
                                 IconButton(onClick = { menu = true }) {
                                     Icon(Icons.Outlined.MoreVert, "More")
                                 }
                                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                     val conv = conversation
-                                    DropdownMenuItem(
-                                        text = { Text("Chat instructions") },
-                                        leadingIcon = { Icon(Icons.Outlined.Tune, null) },
-                                        onClick = { menu = false; editingPrompt = true },
-                                    )
                                     DropdownMenuItem(
                                         text = { Text("Rename") },
                                         leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, null) },
@@ -255,13 +250,9 @@ fun ChatScreen(
                     attaching = attaching,
                     skills = skills,
                     running = running,
-                    reasoning = reasoning,
                     selectedPreset = selected?.provider?.preset,
-                    selectedModelId = selected?.model?.modelId,
-                    onSelectReasoning = vm::setReasoning,
-                    onToggleDeepSeekReasoning = {
-                        if (!vm.toggleDeepSeekReasoning()) showModels = true
-                    },
+                    hasCustomPrompt = !chatPrompt.isNullOrBlank(),
+                    onEditInstructions = { editingPrompt = true },
                     onAttach = vm::attach,
                     onRemove = vm::removeAttachment,
                     onSend = vm::send,
@@ -278,9 +269,9 @@ fun ChatScreen(
     if (renaming && conv != null) {
         TextFieldDialog("Rename chat", conv.title, "Title", onConfirm = { vm.rename(conv, it) }, onDismiss = { renaming = false })
     }
-    if (editingPrompt && conv != null) {
+    if (editingPrompt) {
         TextFieldDialog(
-            "Chat instructions", conv.systemPrompt ?: settings.systemPrompt, "System prompt for this chat",
+            "Chat instructions", chatPrompt ?: settings.systemPrompt, "System prompt for this chat",
             singleLine = false, onConfirm = { vm.setChatPrompt(if (it.trim() == settings.systemPrompt.trim()) null else it) },
             onDismiss = { editingPrompt = false },
         )

@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -88,7 +90,13 @@ fun SettingsHome(vm: ManageViewModel, onBack: () -> Unit, navigate: (String) -> 
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             SectionLabel("Models")
             Card {
-                ListRow("Providers & API keys", "${providers.size} providers · ${models.count { it.enabled }} models on", Icons.Outlined.Key, onClick = { navigate("providers") })
+                val enabledIds = providers.filter { it.enabled }.map { it.id }.toSet()
+                ListRow(
+                    "Providers & API keys",
+                    "${enabledIds.size} active · ${models.count { it.enabled && it.providerId in enabledIds }} models on",
+                    Icons.Outlined.Key,
+                    onClick = { navigate("providers") },
+                )
             }
             SectionLabel("Assistant")
             Card {
@@ -213,16 +221,27 @@ fun PromptScreen(vm: ManageViewModel, onBack: () -> Unit) {
     val snackbar = rememberNotices(vm)
     var text by rememberSaveable(settings.systemPrompt) { mutableStateOf(settings.systemPrompt) }
     SubScreen("Default system prompt", onBack, snackbar) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(
-                "Sent at the start of every chat. A chat can override it from its ⋮ menu → Chat instructions.",
+                "Sent at the start of every chat. A chat can override it from the + menu → Chat instructions.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), minLines = 14)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                minLines = 8,
+                maxLines = 16,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { vm.savePrompt(text) }, enabled = text != settings.systemPrompt) { Text("Save") }
                 OutlinedButton(onClick = { text = DEFAULT_SYSTEM_PROMPT; vm.resetPrompt() }) { Text("Reset to default") }
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

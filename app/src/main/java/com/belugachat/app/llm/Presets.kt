@@ -18,6 +18,8 @@ object Presets {
             "https://platform.deepseek.com/api_keys", "sk-…", "DeepSeek chat and reasoner"),
         ProviderPreset("deploy", "Deploy.com", ProviderKind.OPENAI, "https://api-cdn.deploy.com/api/v1",
             "https://portal.deploy.com/?api_keys=1", "Deploy API key", "DeepSeek V4.1 Flash, GLM-5.3 Flash & fast open models"),
+        ProviderPreset("opencode", "OpenCode Zen", ProviderKind.OPENAI, "https://opencode.ai/zen/v1",
+            "https://opencode.ai/zen", "API key", "Curated models via OpenCode Zen"),
         ProviderPreset("anthropic", "Anthropic", ProviderKind.ANTHROPIC, "https://api.anthropic.com",
             "https://console.anthropic.com/settings/keys", "sk-ant-…", "Claude models"),
         ProviderPreset("openai", "OpenAI", ProviderKind.OPENAI, "https://api.openai.com/v1",

@@ -72,6 +72,7 @@ class ManageViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleModel(model: ModelEntity, enabled: Boolean) = work { c.providers.setModelEnabled(model, enabled) }
     fun setAllModels(models: List<ModelEntity>, enabled: Boolean) = work { models.forEach { c.providers.setModelEnabled(it, enabled) } }
     fun addModel(providerId: String, modelId: String) = work { c.providers.addModel(providerId, modelId) }
+    fun toggleProvider(provider: ProviderEntity, enabled: Boolean) = work { c.providers.setProviderEnabled(provider.id, enabled) }
     fun deleteProvider(id: String, then: () -> Unit) = work { c.providers.delete(id); then() }
 
     // ---- Tools ----

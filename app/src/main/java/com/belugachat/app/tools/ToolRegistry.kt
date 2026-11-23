@@ -50,7 +50,7 @@ class ToolRegistry(
     private val builtins = listOf(
         Builtin("current_time", "Current time", "Return the current local date, time and time zone.",
             objectSchema {}, auto = true),
-        Builtin("web_search", "Web search", "Search the public web. Returns titles, URLs and snippets.",
+        Builtin("web_search", "Web search", "Search the public web using Exa (with DuckDuckGo fallback). Returns titles, URLs and snippets.",
             objectSchema {
                 putJsonObject("query") { put("type", "string"); put("description", "Search query") }
                 putJsonObject("max_results") { put("type", "integer"); put("description", "1-10, default 5") }

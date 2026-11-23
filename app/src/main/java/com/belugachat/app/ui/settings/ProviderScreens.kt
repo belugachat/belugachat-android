@@ -80,12 +80,23 @@ fun ProvidersScreen(vm: ManageViewModel, onBack: () -> Unit, onOpen: (String) ->
                 item { SectionLabel("Connected") }
                 items(providers, key = { it.id }) { provider ->
                     val list = models.filter { it.providerId == provider.id }
+                    val subtitle = if (!provider.enabled) {
+                        "Off"
+                    } else {
+                        "${Presets.byId(provider.preset).name} · key ${vm.maskedKey(provider)} · ${list.count { it.enabled }}/${list.size} models on"
+                    }
                     Card(Modifier.padding(bottom = 10.dp)) {
                         ListRow(
                             provider.name,
-                            "${Presets.byId(provider.preset).name} · key ${vm.maskedKey(provider)} · ${list.count { it.enabled }}/${list.size} models on",
+                            subtitle,
                             Icons.Outlined.Key,
                             onClick = { onOpen(provider.id) },
+                            trailing = {
+                                Switch(
+                                    checked = provider.enabled,
+                                    onCheckedChange = { vm.toggleProvider(provider, it) },
+                                )
+                            },
                         )
                     }
                 }

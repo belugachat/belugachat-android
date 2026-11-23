@@ -13,6 +13,7 @@ import com.belugachat.app.ext.ExtensionsRepository
 import com.belugachat.app.ext.McpConnections
 import com.belugachat.app.tools.ToolRegistry
 import com.belugachat.app.update.AppUpdater
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +42,7 @@ class BelugaChatApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
         // Answers that were streaming when the process died can't resume.
         container.scope.launch { container.db.chats().markInterrupted() }

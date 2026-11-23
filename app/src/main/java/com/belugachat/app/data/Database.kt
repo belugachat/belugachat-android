@@ -1,6 +1,7 @@
 package com.belugachat.app.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -14,6 +15,8 @@ import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "providers")
@@ -26,6 +29,7 @@ data class ProviderEntity(
     val baseUrl: String,
     val encryptedKey: String,
     val createdAt: Long,
+    @ColumnInfo(defaultValue = "1") val enabled: Boolean = true,
 )
 
 object ProviderKind {
@@ -184,6 +188,9 @@ interface ProviderDao {
 
     @Query("DELETE FROM providers WHERE id = :id")
     suspend fun deleteProvider(id: String)
+
+    @Query("UPDATE providers SET enabled = :enabled WHERE id = :id")
+    suspend fun setProviderEnabled(id: String, enabled: Boolean)
 
     @Query("SELECT * FROM models ORDER BY providerId, sort")
     fun observeModels(): Flow<List<ModelEntity>>
@@ -388,7 +395,7 @@ interface ExtensionDao {
         ProviderEntity::class, ModelEntity::class, ConversationEntity::class, MessageEntity::class,
         McpServerEntity::class, SkillEntity::class, InstalledItemEntity::class, ToolPrefEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -397,7 +404,15 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun extensions(): ExtensionDao
 
     companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE providers ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "beluga-chat.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "beluga-chat.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
     }
 }

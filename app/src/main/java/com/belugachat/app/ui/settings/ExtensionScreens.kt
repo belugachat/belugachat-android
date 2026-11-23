@@ -57,7 +57,7 @@ fun ToolsScreen(vm: ManageViewModel, onBack: () -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
             item {
                 Text(
-                    "Tools the model may call. “Ask first” shows an Allow / Deny card in the chat before the tool runs.",
+                    "Tools the model may call. “Ask first” requests your permission in chat before running; “Full access” runs automatically without asking.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
@@ -73,8 +73,22 @@ fun ToolsScreen(vm: ManageViewModel, onBack: () -> Unit) {
                             }
                             Switch(tool.enabled, { vm.setTool(tool, enabled = it) })
                         }
-                        Row(Modifier.padding(start = 12.dp, bottom = 8.dp)) {
-                            FilterChip(selected = !tool.autoApprove, onClick = { vm.setTool(tool, autoApprove = !tool.autoApprove) }, label = { Text("Ask first") }, enabled = tool.enabled)
+                        Row(
+                            Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = !tool.autoApprove,
+                                onClick = { vm.setTool(tool, autoApprove = false) },
+                                label = { Text("Ask first") },
+                                enabled = tool.enabled,
+                            )
+                            FilterChip(
+                                selected = tool.autoApprove,
+                                onClick = { vm.setTool(tool, autoApprove = true) },
+                                label = { Text("Full access") },
+                                enabled = tool.enabled,
+                            )
                         }
                     }
                 }

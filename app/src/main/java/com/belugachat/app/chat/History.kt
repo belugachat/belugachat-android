@@ -51,7 +51,7 @@ object History {
         for (part in parts) {
             when (part) {
                 is Part.ToolCall -> {
-                    current += Content.ToolUse(part.id, part.name, parseArgs(part.arguments))
+                    current += Content.ToolUse(part.id, part.name, parseArgs(part.arguments), part.thoughtSignature)
                     results += Content.ToolResult(part.id, resultText(part), isError(part))
                 }
                 else -> {
